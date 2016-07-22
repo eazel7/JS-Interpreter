@@ -23,6 +23,9 @@
  */
 'use strict';
 
+var acorn = require('acorn');
+var EventEmitter = require('events').EventEmitter;
+
 /**
  * Create a new interpreter.
  * @param {string|!Object} code Raw JavaScript text or AST.
@@ -31,7 +34,8 @@
  *     global scope object.
  * @constructor
  */
-var Interpreter = function(code, opt_initFunc) {
+function Interpreter(code, opt_initFunc) {
+  EventEmitter.call(this);
   if (typeof code == 'string') {
     code = acorn.parse(code);
   }
@@ -77,6 +81,8 @@ var Interpreter = function(code, opt_initFunc) {
     thisExpression: scope,
     done: false
   }];
+
+  this.stopOnDebugger = false;
 };
 
 /**
@@ -128,6 +134,12 @@ Interpreter.prototype.step = function() {
 Interpreter.prototype.run = function() {
   while (!this.paused_ && this.step()) {}
   return this.paused_;
+};
+
+Interpreter.prototype.continue = function () {
+  this.paused_ = false;
+
+  this.run();
 };
 
 /**
@@ -3068,6 +3080,23 @@ Interpreter.prototype['stepWithStatement'] = function() {
 Interpreter.prototype['stepWhileStatement'] =
     Interpreter.prototype['stepDoWhileStatement'];
 
+Interpreter.prototype['stepDebuggerStatement'] = function() {
+  var state = this.stateStack[0];
+  if (this.stopOnDebugger) this.paused_ = true;
+
+  this.stateStack.shift();
+
+  if (this.stopOnDebugger) this.emit('debugger');
+};
+
+Interpreter.prototype.enableDebugger = function () {
+  this.stopOnDebugger = true;
+};
+
+Interpreter.prototype.disableDebugger = function () {
+  this.stopOnDebugger = false;
+};
+
 // Preserve top-level API functions from being pruned by JS compilers.
 // Add others as needed.
 // The global object ('window' in a browser, 'global' in node.js) is 'this'.
@@ -3077,3 +3106,8 @@ Interpreter.prototype['createAsyncFunction'] =
     Interpreter.prototype.createAsyncFunction;
 Interpreter.prototype['step'] = Interpreter.prototype.step;
 Interpreter.prototype['run'] = Interpreter.prototype.run;
+
+var util = require('util');
+util.inherits(Interpreter, EventEmitter);
+
+module.exports = Interpreter;
